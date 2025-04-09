@@ -22,7 +22,7 @@ public class MyAgent extends TWAgent{
     private String role;
     private MyPlanner planner;
     private TWAction nextAction = null;
-    private int sensorRange = 3; // 添加感知范围变量
+    private int sensorRange = 5; // 添加感知范围变量
 
     public int getSensorRange() {
         return sensorRange;
@@ -64,9 +64,11 @@ public class MyAgent extends TWAgent{
             // 检查是否已经发现fuel station
             if (((MyPlanner)planner).hasFoundFuelStation()) {
                 TWFuelStation station = ((MyPlanner)planner).getFuelStation();
+                System.out.println("Agent " + this.name + " 已发现加油站，位置: (" + station.getX() + ", " + station.getY() + ")");
                 
                 // 如果已经在加油站位置，进行加油
                 if (x == station.getX() && y == station.getY()) {
+                    System.out.println("Agent " + this.name + " 已在加油站位置，开始加油");
                     return new TWThought(TWAction.REFUEL, TWDirection.Z);
                 }
                 
@@ -74,26 +76,37 @@ public class MyAgent extends TWAgent{
                 TWPath path = ((MyPlanner)planner).getPathGenerator().findPath(x, y, station.getX(), station.getY());
                 if (path != null && path.getpath() != null && !path.getpath().isEmpty()) {
                     TWPathStep step = path.getpath().removeFirst();
+                    System.out.println("Agent " + this.name + " 生成到加油站的路径，下一步: " + step.getDirection());
                     return new TWThought(TWAction.MOVE, step.getDirection());
+                } else {
+                    System.out.println("Agent " + this.name + " 无法生成到加油站的路径");
                 }
             } else {
+                System.out.println("Agent " + this.name + " 未发现加油站，在感知范围内寻找");
                 // 在感知范围内寻找最近的加油站
                 TWEntity entity = memory.getClosestObjectInSensorRange(TWFuelStation.class);
                 if (entity != null) {
+                    System.out.println("Agent " + this.name + " 在感知范围内发现加油站，位置: (" + entity.getX() + ", " + entity.getY() + ")");
                     TWPath path = ((MyPlanner)planner).getPathGenerator().findPath(x, y, entity.getX(), entity.getY());
                     if (path != null && path.getpath() != null && !path.getpath().isEmpty()) {
                         TWPathStep step = path.getpath().removeFirst();
+                        System.out.println("Agent " + this.name + " 生成到感知范围内加油站的路径，下一步: " + step.getDirection());
                         return new TWThought(TWAction.MOVE, step.getDirection());
+                    } else {
+                        System.out.println("Agent " + this.name + " 无法生成到感知范围内加油站的路径");
                     }
+                } else {
+                    System.out.println("Agent " + this.name + " 在感知范围内未发现加油站");
                 }
             }
             // 如果找不到加油站，停留在原地等待其他agent分享加油站位置
+            System.out.println("Agent " + this.name + " 无法找到加油站，停留在原地等待消息");
             return new TWThought(TWAction.MOVE, TWDirection.Z);
         }
 
         // 根据角色执行不同的行为
         if (this.role.equals("TILE_COLLECTOR")) {
-            // 如果携带了tile，先检查感知范围内是否有hole
+            // 如果携带了tile，先检查感知范围内的hole
             if (CountTile() > 0) {
                 // 首先检查感知范围内的hole
                 TWEntity entity = memory.getClosestObjectInSensorRange(TWHole.class);
@@ -124,6 +137,7 @@ public class MyAgent extends TWAgent{
             
             // 如果携带的tile数量不足3个，先检查感知范围内是否有tile
             if (CountTile() < 3) {
+                // 首先检查感知范围内的tile
                 TWEntity entity = memory.getClosestObjectInSensorRange(TWTile.class);
                 if (entity != null) {
                     // 如果已经在tile位置，执行捡起
@@ -312,41 +326,26 @@ public class MyAgent extends TWAgent{
                         TWEntity discoveredEntity = (TWEntity) obj;
                         discoveredEntities.add(discoveredEntity);
                         
-                        // 检查是否已经发送过关于这个实体的消息
-                        boolean alreadySent = false;
-                        for (Message msg : this.getEnvironment().getMessages()) {
-                            if (msg instanceof MyCommunication) {
-                                MyCommunication comm = (MyCommunication) msg;
-                                if (comm.getSenderId().equals(this.getName()) && 
-                                    comm.getDiscoveredEntity() != null &&
-                                    comm.getDiscoveredEntity().getX() == discoveredEntity.getX() &&
-                                    comm.getDiscoveredEntity().getY() == discoveredEntity.getY()) {
-                                    alreadySent = true;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        if (!alreadySent) {
-                            // 发送消息给其他agent
+                        // 如果是加油站，立即广播给所有agent
+                        if (discoveredEntity instanceof TWFuelStation) {
+                            System.out.println("Agent " + this.name + " 发现加油站，位置: (" + 
+                                             discoveredEntity.getX() + ", " + discoveredEntity.getY() + ")");
+                            
+                            // 更新planner中的加油站信息
+                            ((MyPlanner)planner).setFuelStation((TWFuelStation)discoveredEntity);
+                            
+                            // 发送消息给所有agent
                             MyCommunication message = new MyCommunication(
                                 this.getName(),
                                 "ALL",  // 广播给所有agent
-                                "发现实体",
+                                "发现加油站",
                                 discoveredEntity
                             );
                             
-                            // 如果是加油站，特别标记并打印消息
-                            if (discoveredEntity instanceof TWFuelStation) {
-                                System.out.println("Agent " + this.name + " 发现加油站，位置: (" + 
-                                                 discoveredEntity.getX() + ", " + discoveredEntity.getY() + ")");
-                                message.setMessage("发现加油站");
-                            }
-                            
                             // 打印发送消息的信息
-                            System.out.println("Agent " + this.name + " 发送消息：发现实体 " + 
-                                             discoveredEntity.getClass().getSimpleName() + 
-                                             " 在 (" + discoveredEntity.getX() + ", " + discoveredEntity.getY() + ")");
+                            System.out.println("Agent " + this.name + " 发送消息：发现加油站在(" + 
+                                             discoveredEntity.getX() + ", " + discoveredEntity.getY() + ")");
+                            
                             // 通过环境发送消息
                             this.getEnvironment().receiveMessage(message);
                         }
@@ -361,17 +360,10 @@ public class MyAgent extends TWAgent{
             for (Message msg : messages) {
                 if (msg instanceof MyCommunication) {
                     MyCommunication comm = (MyCommunication) msg;
-                    // 如果消息已经被处理过，跳过
-                    if (comm.isProcessed()) {
-                        continue;
-                    }
-                    
                     // 如果消息是发送给所有agent或者是发送给当前agent的
                     if (comm.getTo().equals("ALL") || comm.getTo().equals(this.getName())) {
                         // 处理消息
                         receiveMessage(msg);
-                        // 标记消息为已处理
-                        comm.setProcessed(true);
                     }
                 }
             }
@@ -390,21 +382,15 @@ public class MyAgent extends TWAgent{
             
             // 处理接收到的消息
             if (entity != null) {
-                // 如果是TILE_PICKED_UP消息，从记忆中删除该tile
-                if (comm.getMessage().equals("TILE_PICKED_UP")) {
-                    memory.getMemoryGrid().set(entity.getX(), entity.getY(), null);
-                    System.out.println("Agent " + this.name + " 收到消息：tile在(" + entity.getX() + ", " + entity.getY() + ")被捡起，已更新memory");
-                } else if (comm.getMessage().equals("发现实体") || comm.getMessage().equals("发现加油站")) {
-                    // 更新记忆中的实体信息
+                // 如果是加油站消息
+                if (comm.getMessage().equals("发现加油站")) {
+                    // 更新记忆中的加油站信息
                     if (memory instanceof MyMemory) {
                         ((MyMemory)memory).updateFromMessage(comm);
-                        // 如果是加油站，特别处理
-                        if (entity instanceof TWFuelStation) {
-                            System.out.println("Agent " + this.name + " 更新记忆：加油站位置在(" + 
-                                             entity.getX() + ", " + entity.getY() + ")");
-                            // 更新planner中的加油站信息
-                            ((MyPlanner)planner).setFuelStation((TWFuelStation)entity);
-                        }
+                        // 更新planner中的加油站信息
+                        ((MyPlanner)planner).setFuelStation((TWFuelStation)entity);
+                        System.out.println("Agent " + this.name + " 更新记忆：加油站位置在(" + 
+                                         entity.getX() + ", " + entity.getY() + ")");
                     }
                 }
             }
